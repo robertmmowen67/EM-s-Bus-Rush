@@ -96,6 +96,7 @@ export interface GameState {
   rushTradeUsedThisTurn: boolean;
   busDeck: DeckState<BusCard>;
   rushDeck: DeckState<RushCard>;
+  eventDeck: DeckState<EventCard>;
   activeEvents: ActiveEvent[];
   activeRestrictions: PlayerRestriction[];
   taxiTrip?: TaxiTripState;

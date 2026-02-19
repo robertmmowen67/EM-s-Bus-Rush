@@ -17,7 +17,7 @@ export const createGame = (
   }
 
   const seed = input.seed ?? Date.now();
-  let { busDeck, rushDeck } = initializeDecks(catalog, seed);
+  let { busDeck, rushDeck, eventDeck } = initializeDecks(catalog, seed);
 
   const players: PlayerState[] = input.players.map((player, index) => {
     const busDraw = drawCards(busDeck, 5, seed + 100 + index);
@@ -50,6 +50,7 @@ export const createGame = (
     rushTradeUsedThisTurn: false,
     busDeck,
     rushDeck,
+    eventDeck,
     activeEvents: [],
     activeRestrictions: [],
     taxiTrip: undefined,
