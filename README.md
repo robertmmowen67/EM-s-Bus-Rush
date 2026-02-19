@@ -261,3 +261,12 @@ mobile app packaging
 Game design: NYC Bus Rush creators
 
 Engineering: Codex + human collaborators
+
+## Current implementation status
+
+The repository has been bootstrapped with:
+
+- `spec/game-spec.md` current-scope spec for engine bootstrap and deck behavior.
+- `engine/state.ts` for game state and card/deck models.
+- `engine/decks.ts` for deterministic seeded deck operations.
+- `engine/createGame.ts` for initial game-state creation with opening hands.
