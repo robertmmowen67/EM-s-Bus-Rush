@@ -1,5 +1,7 @@
+import { recalculateTotalScores } from "./bonuses";
 import { drawCards, initializeDecks, type DeckCatalog } from "./decks";
 import {
+  createEmptyBonusCounts,
   createEmptyScore,
   type CreateGameInput,
   type GameState,
@@ -37,7 +39,7 @@ export const createGame = (
     };
   });
 
-  return {
+  return recalculateTotalScores({
     seed,
     players,
     currentPlayerIndex: 0,
@@ -53,6 +55,11 @@ export const createGame = (
     activeEvents: [],
     activeRestrictions: [],
     taxiTrip: undefined,
+    expressRiderBonus: { isLocked: false },
+    queensBusRedesignBonus: { isLocked: false },
+    bonusCountsByPlayerId: Object.fromEntries(
+      players.map((player) => [player.id, createEmptyBonusCounts()]),
+    ),
     eventLog: ["Game created."],
-  };
+  });
 };

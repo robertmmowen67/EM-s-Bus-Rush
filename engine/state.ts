@@ -72,6 +72,16 @@ export interface TaxiTripState {
   returnAfterRound: number;
 }
 
+export interface BonusTracker {
+  ownerPlayerId?: string;
+  isLocked: boolean;
+}
+
+export interface PlayerBonusCounts {
+  expressBusPlays: number;
+  rushCardsPlayed: number;
+}
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -99,6 +109,9 @@ export interface GameState {
   activeEvents: ActiveEvent[];
   activeRestrictions: PlayerRestriction[];
   taxiTrip?: TaxiTripState;
+  expressRiderBonus: BonusTracker;
+  queensBusRedesignBonus: BonusTracker;
+  bonusCountsByPlayerId: Record<string, PlayerBonusCounts>;
   eventLog: string[];
 }
 
@@ -115,4 +128,9 @@ export const createEmptyScore = (): Record<Borough, number> => ({
   Queens: 0,
   Bronx: 0,
   StatenIsland: 0,
+});
+
+export const createEmptyBonusCounts = (): PlayerBonusCounts => ({
+  expressBusPlays: 0,
+  rushCardsPlayed: 0,
 });

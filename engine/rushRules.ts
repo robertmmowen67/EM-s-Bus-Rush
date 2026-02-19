@@ -1,3 +1,4 @@
+import { recalculateTotalScores, registerRushCardPlay } from "./bonuses";
 import { discardBusCard, discardRushCard, drawCards, drawRushCard } from "./decks";
 import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
 
@@ -233,19 +234,25 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
       ),
     };
 
-    return {
-      ...nextState,
-      players,
-      eventLog: [...nextState.eventLog, `${actor.name} rerouted a Bus card to ${input.reroute.toBorough}.`],
-    };
+    return registerRushCardPlay(
+      {
+        ...nextState,
+        players,
+        eventLog: [...nextState.eventLog, `${actor.name} rerouted a Bus card to ${input.reroute.toBorough}.`],
+      },
+      currentPlayer.id,
+    );
   }
 
   if (key === "bus_transfer") {
-    return {
-      ...nextState,
-      busPlaysAllowedThisTurn: Math.max(nextState.busPlaysAllowedThisTurn, 2),
-      eventLog: [...nextState.eventLog, `${currentPlayer.name} played Bus Transfer.`],
-    };
+    return registerRushCardPlay(
+      {
+        ...nextState,
+        busPlaysAllowedThisTurn: Math.max(nextState.busPlaysAllowedThisTurn, 2),
+        eventLog: [...nextState.eventLog, `${currentPlayer.name} played Bus Transfer.`],
+      },
+      currentPlayer.id,
+    );
   }
 
   if (!input.destinationBorough) {
@@ -275,7 +282,7 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
     ],
   };
 
-  return movementState;
+  return registerRushCardPlay(movementState, currentPlayer.id);
 };
 
 export const endTurn = (state: GameState): GameState => {
@@ -290,7 +297,7 @@ export const endTurn = (state: GameState): GameState => {
     }
   }
 
-  return {
+  return recalculateTotalScores({
     ...state,
     currentPlayerIndex: nextPlayerIndex,
     turn: state.turn + 1,
@@ -303,5 +310,5 @@ export const endTurn = (state: GameState): GameState => {
     players: state.players.map((player, index) =>
       index === nextPlayerIndex ? { ...player, actionsRemaining: DEFAULT_ACTIONS_PER_TURN } : player,
     ),
-  };
+  });
 };
