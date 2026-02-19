@@ -55,6 +55,12 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   activeEvents: [],
   activeRestrictions: [],
   taxiTrip: undefined,
+  expressRiderBonus: { isLocked: false },
+  queensBusRedesignBonus: { isLocked: false },
+  bonusCountsByPlayerId: {
+    p1: { expressBusPlays: 0, rushCardsPlayed: 0 },
+    p2: { expressBusPlays: 0, rushCardsPlayed: 0 },
+  },
   eventLog: [],
   ...options,
 });
@@ -229,5 +235,63 @@ describe("Taxi return behavior", () => {
 
     const ended = endTurn(groupArrived);
     expect(ended.taxiTrip).toBeUndefined();
+  });
+});
+
+
+describe("Queens Bus Redesign bonus", () => {
+  test("awards, steals, and locks per rush play count", () => {
+    const state = createState([rushCard("r1", "bus_transfer")], undefined, {
+      bonusCountsByPlayerId: {
+        p1: { expressBusPlays: 0, rushCardsPlayed: 4 },
+        p2: { expressBusPlays: 0, rushCardsPlayed: 4 },
+      },
+      queensBusRedesignBonus: { ownerPlayerId: "p2", isLocked: false },
+    });
+
+    const stolen = playRushCard(state, { playerId: "p1", cardId: "r1" });
+    expect(stolen.queensBusRedesignBonus.ownerPlayerId).toBe("p1");
+
+    const lockState = {
+      ...stolen,
+      currentPlayerIndex: 0,
+      actionsRemaining: 2,
+      players: stolen.players.map((player, index) =>
+        index === 0
+          ? { ...player, actionsRemaining: 2, rushHand: [rushCard("r2", "reroute")], busHand: [busCard("b1", "Queens")] }
+          : index === 1
+            ? { ...player, actionsRemaining: 2, rushHand: [rushCard("r3", "take_the_subway")] }
+            : player,
+      ),
+      bonusCountsByPlayerId: {
+        ...stolen.bonusCountsByPlayerId,
+        p1: { ...stolen.bonusCountsByPlayerId.p1, rushCardsPlayed: 5 },
+      },
+    };
+
+    const locked = playRushCard(lockState, {
+      playerId: "p1",
+      cardId: "r2",
+      reroute: { busCardId: "b1", toBorough: "Bronx" },
+    });
+    expect(locked.queensBusRedesignBonus).toEqual({ ownerPlayerId: "p1", isLocked: true });
+
+    const challenger = {
+      ...locked,
+      currentPlayerIndex: 1,
+      actionsRemaining: 2,
+      currentBorough: "Queens" as const,
+      bonusCountsByPlayerId: {
+        ...locked.bonusCountsByPlayerId,
+        p2: { ...locked.bonusCountsByPlayerId.p2, rushCardsPlayed: 7 },
+      },
+    };
+
+    const afterChallenge = playRushCard(challenger, {
+      playerId: "p2",
+      cardId: "r3",
+      destinationBorough: "Brooklyn",
+    });
+    expect(afterChallenge.queensBusRedesignBonus.ownerPlayerId).toBe("p1");
   });
 });

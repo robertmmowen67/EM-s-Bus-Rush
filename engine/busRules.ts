@@ -1,3 +1,4 @@
+import { recalculateTotalScores, registerExpressBusPlay } from "./bonuses";
 import {
   OUTER_BOROUGHS,
   type Borough,
@@ -152,7 +153,6 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       ...player,
       busHand: player.busHand.filter((entry) => entry.id !== card.id),
       scoreByBorough: addScoreForBorough(player.scoreByBorough, card.borough),
-      totalScore: player.totalScore + 1,
       actionsRemaining: Math.max(0, player.actionsRemaining - 1),
     };
   });
@@ -161,7 +161,7 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     (restriction) => restriction.targetPlayerId !== currentPlayer.id,
   );
 
-  return {
+  const nextState: GameState = {
     ...state,
     currentBorough: card.borough,
     actionsRemaining: Math.max(0, state.actionsRemaining - 1),
@@ -175,4 +175,10 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       `${currentPlayer.name} played ${card.name} to ${card.borough} (+1 point).`,
     ],
   };
+
+  if (isExpressCard(card)) {
+    return registerExpressBusPlay(nextState, currentPlayer.id);
+  }
+
+  return recalculateTotalScores(nextState);
 };
