@@ -1,4 +1,4 @@
-import { type BusCard, type DeckState, type GameCard, type RushCard } from "./state";
+import { type BusCard, type DeckState, type EventCard, type GameCard, type RushCard } from "./state";
 
 const RNG_MODULUS = 2147483647;
 const RNG_MULTIPLIER = 48271;
@@ -12,11 +12,13 @@ export interface DrawResult<TCard extends GameCard> {
 export interface DeckCatalog {
   bus: BusCard[];
   rush: RushCard[];
+  event: EventCard[];
 }
 
 export interface InitializedDecks {
   busDeck: DeckState<BusCard>;
   rushDeck: DeckState<RushCard>;
+  eventDeck: DeckState<EventCard>;
 }
 
 export const normalizeSeed = (seed: number): number => {
@@ -146,10 +148,18 @@ export const createRushDeck = (
   seed: number,
 ): DeckState<RushCard> => createDeckState(cards, seed);
 
+export const createEventDeck = (
+  cards: readonly EventCard[],
+  seed: number,
+): DeckState<EventCard> => createDeckState(cards, seed);
+
 export const drawBusCard = (deck: DeckState<BusCard>, seed: number): DrawResult<BusCard> =>
   drawCard(deck, seed);
 
 export const drawRushCard = (deck: DeckState<RushCard>, seed: number): DrawResult<RushCard> =>
+  drawCard(deck, seed);
+
+export const drawEventCard = (deck: DeckState<EventCard>, seed: number): DrawResult<EventCard> =>
   drawCard(deck, seed);
 
 export const discardBusCard = (deck: DeckState<BusCard>, card: BusCard): DeckState<BusCard> =>
@@ -158,7 +168,13 @@ export const discardBusCard = (deck: DeckState<BusCard>, card: BusCard): DeckSta
 export const discardRushCard = (deck: DeckState<RushCard>, card: RushCard): DeckState<RushCard> =>
   discardCard(deck, card);
 
+export const discardEventCard = (
+  deck: DeckState<EventCard>,
+  card: EventCard,
+): DeckState<EventCard> => discardCard(deck, card);
+
 export const initializeDecks = (catalog: DeckCatalog, seed: number): InitializedDecks => ({
   busDeck: createBusDeck(catalog.bus, seed + 11),
   rushDeck: createRushDeck(catalog.rush, seed + 23),
+  eventDeck: createEventDeck(catalog.event, seed + 37),
 });

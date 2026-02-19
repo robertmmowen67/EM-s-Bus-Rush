@@ -29,6 +29,7 @@ const baseState = (hand: BusCard[]): GameState => ({
   rushTradeUsedThisTurn: false,
   busDeck: { drawPile: [], discardPile: [] },
   rushDeck: { drawPile: [], discardPile: [] },
+  eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
   eventLog: [],
