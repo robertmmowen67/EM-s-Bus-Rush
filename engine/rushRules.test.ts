@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
 import { endTurn, playRushCard, tradeRush } from "./rushRules";
-import { type BusCard, type GameState, type RushCard } from "./state";
+import { type BusCard, type EventCard, type GameState, type RushCard } from "./state";
 
 const busCard = (id: string, borough: BusCard["borough"], value = 1, tags?: string[]): BusCard => ({
   id,
@@ -18,6 +18,19 @@ const rushCard = (id: string, effectKey: string): RushCard => ({
   name: effectKey,
   type: "rush",
   effectKey,
+});
+
+
+const eventCard = (
+  id: string,
+  effectKey: string,
+  durationRounds?: number,
+): EventCard => ({
+  id,
+  name: effectKey,
+  type: "event",
+  effectKey,
+  durationRounds,
 });
 
 const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partial<GameState>): GameState => ({
@@ -52,9 +65,16 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   rushTradeUsedThisTurn: false,
   busDeck: { drawPile: [busCard("draw-b1", "Bronx"), busCard("draw-b2", "Brooklyn")], discardPile: [] },
   rushDeck: { drawPile: [rushCard("draw-r1", "take_the_subway")], discardPile: [] },
+  eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
   taxiTrip: undefined,
+  expressRiderBonus: { isLocked: false },
+  queensBusRedesignBonus: { isLocked: false },
+  bonusCountsByPlayerId: {
+    p1: { expressBusPlays: 0, rushCardsPlayed: 0 },
+    p2: { expressBusPlays: 0, rushCardsPlayed: 0 },
+  },
   eventLog: [],
   ...options,
 });
@@ -229,5 +249,125 @@ describe("Taxi return behavior", () => {
 
     const ended = endTurn(groupArrived);
     expect(ended.taxiTrip).toBeUndefined();
+  });
+});
+
+describe("Event deck system", () => {
+  test("reveals one event every 2 rounds", () => {
+    const state = createState([], undefined, {
+      round: 1,
+      currentPlayerIndex: 1,
+      eventDeck: {
+        drawPile: [eventCard("e1", "service_surge", 2)],
+        discardPile: [],
+      },
+    });
+
+    const next = endTurn(state);
+
+    expect(next.round).toBe(2);
+    expect(next.activeEvents).toHaveLength(1);
+    expect(next.activeEvents[0].roundsRemaining).toBe(2);
+    expect(next.eventLog).toContain("Event revealed: service_surge.");
+  });
+
+  test("2-round modifier expires after two round advances", () => {
+    const state = createState([], undefined, {
+      round: 2,
+      activeEvents: [{ card: eventCard("e2", "rush_hour", 2), roundsRemaining: 2 }],
+    });
+
+    const afterFirstRound = endTurn({ ...state, currentPlayerIndex: 1 });
+    expect(afterFirstRound.round).toBe(3);
+    expect(afterFirstRound.activeEvents[0].roundsRemaining).toBe(1);
+
+    const afterSecondRound = endTurn({ ...afterFirstRound, currentPlayerIndex: 1 });
+    expect(afterSecondRound.round).toBe(4);
+    expect(afterSecondRound.activeEvents).toHaveLength(0);
+  });
+
+  test("one-time event resolves immediately and is discarded", () => {
+    const state = createState([], undefined, {
+      round: 1,
+      currentPlayerIndex: 1,
+      actionsRemaining: 2,
+      players: createState([], undefined).players.map((player, index) =>
+        index === 0 ? { ...player, actionsRemaining: 2 } : player,
+      ),
+      eventDeck: {
+        drawPile: [eventCard("e3", "city_funding_boost")],
+        discardPile: [],
+      },
+    });
+
+    const next = endTurn(state);
+
+    expect(next.actionsRemaining).toBe(3);
+    expect(next.players[0].actionsRemaining).toBe(3);
+    expect(next.activeEvents).toHaveLength(0);
+    expect(next.eventDeck.discardPile.map((card) => card.id)).toContain("e3");
+  });
+});
+
+
+describe("Queens Bus Redesign bonus", () => {
+  test("awards at 4 rush plays, steals on exceed, and locks at 6", () => {
+    const state = createState([rushCard("r-award", "bus_transfer")], undefined, {
+      bonusCountsByPlayerId: {
+        p1: { expressBusPlays: 0, rushCardsPlayed: 4 },
+        p2: { expressBusPlays: 0, rushCardsPlayed: 4 },
+      },
+      queensBusRedesignBonus: { ownerPlayerId: "p2", isLocked: false },
+      players: createState([rushCard("r-award", "bus_transfer")]).players.map((player, index) =>
+        index === 0 ? { ...player, scoreByBorough: { ...player.scoreByBorough, Queens: 1 } } : player,
+      ),
+    });
+
+    const stolen = playRushCard(state, { playerId: "p1", cardId: "r-award" });
+    expect(stolen.queensBusRedesignBonus.ownerPlayerId).toBe("p1");
+    expect(stolen.players[0].totalScore).toBe(3);
+
+    const lockState = {
+      ...stolen,
+      currentPlayerIndex: 0,
+      actionsRemaining: 2,
+      players: stolen.players.map((player, index) =>
+        index === 0
+          ? { ...player, rushHand: [rushCard("r-lock", "reroute")], actionsRemaining: 2 }
+          : index === 1
+            ? { ...player, rushHand: [rushCard("r-challenge", "take_the_subway")], actionsRemaining: 2 }
+            : player,
+      ),
+      bonusCountsByPlayerId: {
+        ...stolen.bonusCountsByPlayerId,
+        p1: { ...stolen.bonusCountsByPlayerId.p1, rushCardsPlayed: 5 },
+      },
+    };
+
+    const locked = playRushCard(lockState, {
+      playerId: "p1",
+      cardId: "r-lock",
+      reroute: { busCardId: lockState.players[0].busHand[0].id, toBorough: "Bronx" },
+    });
+    expect(locked.queensBusRedesignBonus).toEqual({ ownerPlayerId: "p1", isLocked: true });
+
+    const challengeState = {
+      ...locked,
+      currentPlayerIndex: 1,
+      actionsRemaining: 2,
+      currentBorough: "Queens" as const,
+      bonusCountsByPlayerId: {
+        ...locked.bonusCountsByPlayerId,
+        p2: { ...locked.bonusCountsByPlayerId.p2, rushCardsPlayed: 7 },
+      },
+    };
+
+    const challenged = playRushCard(challengeState, {
+      playerId: "p2",
+      cardId: "r-challenge",
+      destinationBorough: "Brooklyn",
+    });
+
+    expect(challenged.queensBusRedesignBonus.ownerPlayerId).toBe("p1");
   });
 });

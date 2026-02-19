@@ -1,7 +1,16 @@
-import { discardBusCard, discardRushCard, drawCards, drawRushCard } from "./decks";
+import { recalculateTotalScores, registerRushCardPlay } from "./bonuses";
+import {
+  discardBusCard,
+  discardEventCard,
+  discardRushCard,
+  drawCards,
+  drawEventCard,
+  drawRushCard,
+} from "./decks";
 import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
 
 const DEFAULT_ACTIONS_PER_TURN = 2;
+const EVENT_TRIGGER_ROUND_INTERVAL = 2;
 
 interface RushTradeInput {
   playerId: string;
@@ -21,8 +30,81 @@ interface PlayRushCardInput {
   reroute?: RerouteInput;
 }
 
-const normalizeKey = (card: RushCard): string =>
-  (card.effectKey || card.name).trim().toLowerCase().replace(/\s+/g, "_");
+const decrementActiveEvents = (activeEvents: GameState["activeEvents"]): GameState["activeEvents"] =>
+  activeEvents
+    .map((event) => ({
+      ...event,
+      roundsRemaining: event.roundsRemaining - 1,
+    }))
+    .filter((event) => event.roundsRemaining > 0);
+
+const applyOneTimeEvent = (state: GameState, eventKey: string): GameState => {
+  if (eventKey === "city_funding_boost") {
+    return {
+      ...state,
+      actionsRemaining: state.actionsRemaining + 1,
+      players: state.players.map((player, index) =>
+        index === state.currentPlayerIndex
+          ? { ...player, actionsRemaining: player.actionsRemaining + 1 }
+          : player,
+      ),
+      eventLog: [...state.eventLog, "Event effect: City Funding Boost grants +1 action this turn."],
+    };
+  }
+
+  return {
+    ...state,
+    eventLog: [...state.eventLog, `Event effect: ${eventKey} resolved.`],
+  };
+};
+
+const normalizeEffectKey = (effectKey: string, name: string): string =>
+  (effectKey || name).trim().toLowerCase().replace(/\s+/g, "_");
+
+const triggerRoundEvent = (state: GameState): GameState => {
+  const draw = drawEventCard(state.eventDeck, state.seed + state.round + state.turn + 53);
+
+  if (!draw.card) {
+    return {
+      ...state,
+      eventDeck: draw.deck,
+      eventLog: [...state.eventLog, "No Event card available to reveal."],
+    };
+  }
+
+  const revealed = draw.card;
+  const eventKey = normalizeEffectKey(revealed.effectKey, revealed.name);
+  const revealedLog = `Event revealed: ${revealed.name}.`;
+
+  if (revealed.durationRounds && revealed.durationRounds > 0) {
+    return {
+      ...state,
+      eventDeck: draw.deck,
+      activeEvents: [
+        ...state.activeEvents,
+        {
+          card: revealed,
+          roundsRemaining: revealed.durationRounds,
+        },
+      ],
+      eventLog: [
+        ...state.eventLog,
+        revealedLog,
+        `Event modifier active for ${revealed.durationRounds} rounds.`,
+      ],
+    };
+  }
+
+  const afterDiscard = {
+    ...state,
+    eventDeck: discardEventCard(draw.deck, revealed),
+    eventLog: [...state.eventLog, revealedLog],
+  };
+
+  return applyOneTimeEvent(afterDiscard, eventKey);
+};
+
+const normalizeKey = (card: RushCard): string => normalizeEffectKey(card.effectKey, card.name);
 
 const assertRushNotBlocked = (state: GameState, playerId: string): void => {
   const blocked = state.activeRestrictions.some(
@@ -233,19 +315,23 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
       ),
     };
 
-    return {
+    nextState = {
       ...nextState,
       players,
       eventLog: [...nextState.eventLog, `${actor.name} rerouted a Bus card to ${input.reroute.toBorough}.`],
     };
+
+    return registerRushCardPlay(nextState, currentPlayer.id);
   }
 
   if (key === "bus_transfer") {
-    return {
+    nextState = {
       ...nextState,
       busPlaysAllowedThisTurn: Math.max(nextState.busPlaysAllowedThisTurn, 2),
       eventLog: [...nextState.eventLog, `${currentPlayer.name} played Bus Transfer.`],
     };
+
+    return registerRushCardPlay(nextState, currentPlayer.id);
   }
 
   if (!input.destinationBorough) {
@@ -256,7 +342,7 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
     throw new Error("Illegal Rush movement for selected card.");
   }
 
-  const movementState: GameState = {
+  nextState = {
     ...nextState,
     currentBorough: key === "taxi" ? state.currentBorough : input.destinationBorough,
     taxiTrip:
@@ -270,12 +356,14 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
     eventLog: [
       ...nextState.eventLog,
       `${currentPlayer.name} played ${rushCard.name}${
-        key === "taxi" ? ` and traveled solo to ${input.destinationBorough}.` : ` and moved to ${input.destinationBorough}.`
+        key === "taxi"
+          ? ` and traveled solo to ${input.destinationBorough}.`
+          : ` and moved to ${input.destinationBorough}.`
       }`,
     ],
   };
 
-  return movementState;
+  return registerRushCardPlay(nextState, currentPlayer.id);
 };
 
 export const endTurn = (state: GameState): GameState => {
@@ -290,7 +378,7 @@ export const endTurn = (state: GameState): GameState => {
     }
   }
 
-  return {
+  const baseNextState: GameState = {
     ...state,
     currentPlayerIndex: nextPlayerIndex,
     turn: state.turn + 1,
@@ -300,8 +388,14 @@ export const endTurn = (state: GameState): GameState => {
     busPlaysAllowedThisTurn: 1,
     rushTradeUsedThisTurn: false,
     taxiTrip: nextTaxiTrip,
+    activeEvents: wrappedRound ? decrementActiveEvents(state.activeEvents) : state.activeEvents,
     players: state.players.map((player, index) =>
       index === nextPlayerIndex ? { ...player, actionsRemaining: DEFAULT_ACTIONS_PER_TURN } : player,
     ),
   };
+
+  const shouldRevealEvent = wrappedRound && nextRound % EVENT_TRIGGER_ROUND_INTERVAL === 0;
+  const nextState = shouldRevealEvent ? triggerRoundEvent(baseNextState) : baseNextState;
+
+  return recalculateTotalScores(nextState);
 };

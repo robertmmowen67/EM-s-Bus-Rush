@@ -29,8 +29,16 @@ const baseState = (hand: BusCard[]): GameState => ({
   rushTradeUsedThisTurn: false,
   busDeck: { drawPile: [], discardPile: [] },
   rushDeck: { drawPile: [], discardPile: [] },
+  eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
+  expressRiderBonus: { isLocked: false },
+  queensBusRedesignBonus: { isLocked: false },
+  bonusCountsByPlayerId: {
+    p1: { expressBusPlays: 0, rushCardsPlayed: 0 },
+    p2: { expressBusPlays: 0, rushCardsPlayed: 0 },
+    p3: { expressBusPlays: 0, rushCardsPlayed: 0 },
+  },
   eventLog: [],
   players: [
     {
@@ -221,5 +229,78 @@ describe("Limited/Select restrictions", () => {
     expect(() => playBusCard(p2Turn, { playerId: "p2", cardId: "express" })).toThrow(
       "Active restriction prevents this Bus play.",
     );
+  });
+});
+
+
+describe("Express Rider bonus", () => {
+  test("awards at 4 express, steals on exceed, and locks at 6", () => {
+    const state = {
+      ...baseState([busCard("e1", "Manhattan", ["express"])]),
+      currentBorough: "Queens" as const,
+      bonusCountsByPlayerId: {
+        p1: { expressBusPlays: 4, rushCardsPlayed: 0 },
+        p2: { expressBusPlays: 4, rushCardsPlayed: 0 },
+        p3: { expressBusPlays: 0, rushCardsPlayed: 0 },
+      },
+      expressRiderBonus: { ownerPlayerId: "p2", isLocked: false },
+      players: baseState([busCard("e1", "Manhattan", ["express"])]).players.map((player, index) =>
+        index === 0 ? { ...player, scoreByBorough: { ...player.scoreByBorough, Manhattan: 1 } } : player,
+      ),
+    };
+
+    const stolen = playBusCard(state, { playerId: "p1", cardId: "e1" });
+
+    expect(stolen.expressRiderBonus.ownerPlayerId).toBe("p1");
+    expect(stolen.players[0].totalScore).toBe(4);
+
+    const lockState = {
+      ...stolen,
+      currentPlayerIndex: 0,
+      currentBorough: "Queens" as const,
+      players: stolen.players.map((player, index) =>
+        index === 0
+          ? {
+              ...player,
+              busHand: [busCard("e2", "Manhattan", ["express"])],
+              actionsRemaining: 2,
+            }
+          : index === 1
+            ? {
+                ...player,
+                busHand: [busCard("e3", "Manhattan", ["express"])],
+                actionsRemaining: 2,
+              }
+            : player,
+      ),
+      actionsRemaining: 2,
+      busPlaysThisTurn: 0,
+      expressRiderBonus: { ownerPlayerId: "p1", isLocked: false },
+      bonusCountsByPlayerId: {
+        ...stolen.bonusCountsByPlayerId,
+        p1: { ...stolen.bonusCountsByPlayerId.p1, expressBusPlays: 5 },
+      },
+    };
+
+    const locked = playBusCard(lockState, { playerId: "p1", cardId: "e2" });
+    expect(locked.expressRiderBonus).toEqual({ ownerPlayerId: "p1", isLocked: true });
+
+    const challengerTurn = {
+      ...locked,
+      currentPlayerIndex: 1,
+      currentBorough: "Queens" as const,
+      actionsRemaining: 2,
+      busPlaysThisTurn: 0,
+      players: locked.players.map((player, index) =>
+        index === 1 ? { ...player, actionsRemaining: 2 } : player,
+      ),
+      bonusCountsByPlayerId: {
+        ...locked.bonusCountsByPlayerId,
+        p2: { ...locked.bonusCountsByPlayerId.p2, expressBusPlays: 7 },
+      },
+    };
+
+    const afterLockedChallenge = playBusCard(challengerTurn, { playerId: "p2", cardId: "e3" });
+    expect(afterLockedChallenge.expressRiderBonus.ownerPlayerId).toBe("p1");
   });
 });
