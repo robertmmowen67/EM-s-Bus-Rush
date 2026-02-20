@@ -69,10 +69,21 @@ const isRestrictedCardPlay = (card: BusCard, restrictions: PlayerRestriction[]):
 const addScoreForBorough = (
   scoreByBorough: Record<Borough, number>,
   borough: Borough,
+  points: number,
 ): Record<Borough, number> => ({
   ...scoreByBorough,
-  [borough]: scoreByBorough[borough] + 1,
+  [borough]: scoreByBorough[borough] + points,
 });
+
+const normalizeEffectKey = (effectKey: string): string => effectKey.trim().toLowerCase().replace(/\s+/g, "_");
+
+const calculateBonusPoints = (card: BusCard, playerPerkEffectKey?: string): number => {
+  const perkKey = playerPerkEffectKey ? normalizeEffectKey(playerPerkEffectKey) : "";
+  const expressRiderBonus = perkKey === "express_rider" && isExpressCard(card) ? 1 : 0;
+  const queensRedesignBonus = perkKey === "queens_bus_redesign" && card.borough === "Queens" ? 1 : 0;
+
+  return expressRiderBonus + queensRedesignBonus;
+};
 
 const buildRestriction = (
   targetPlayerId: string,
@@ -121,6 +132,12 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     throw new Error("Borough score cap reached for this player.");
   }
 
+  const bonusPoints = calculateBonusPoints(card, currentPlayer.activePerk?.effectKey);
+  const totalPointsToAward = Math.min(
+    MAX_POINTS_PER_BOROUGH - currentPlayer.scoreByBorough[card.borough],
+    1 + bonusPoints,
+  );
+
   const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
   const selectedPlayerExists =
     input.selectedPlayerId && state.players.some((player) => player.id === input.selectedPlayerId);
@@ -151,8 +168,8 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     return {
       ...player,
       busHand: player.busHand.filter((entry) => entry.id !== card.id),
-      scoreByBorough: addScoreForBorough(player.scoreByBorough, card.borough),
-      totalScore: player.totalScore + 1,
+      scoreByBorough: addScoreForBorough(player.scoreByBorough, card.borough, totalPointsToAward),
+      totalScore: player.totalScore + totalPointsToAward,
       actionsRemaining: Math.max(0, player.actionsRemaining - 1),
     };
   });
@@ -172,7 +189,9 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       state.taxiTrip && state.taxiTrip.soloBorough === card.borough ? undefined : state.taxiTrip,
     eventLog: [
       ...state.eventLog,
-      `${currentPlayer.name} played ${card.name} to ${card.borough} (+1 point).`,
+      `${currentPlayer.name} played ${card.name} to ${card.borough} (+${totalPointsToAward} point${
+        totalPointsToAward === 1 ? "" : "s"
+      }).`,
     ],
   };
 };

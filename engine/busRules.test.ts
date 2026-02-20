@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
-import { type BusCard, type GameState } from "./state";
+import { type BusCard, type GameState, type PerkCard } from "./state";
 
 const busCard = (
   id: string,
@@ -222,5 +222,68 @@ describe("Limited/Select restrictions", () => {
     expect(() => playBusCard(p2Turn, { playerId: "p2", cardId: "express" })).toThrow(
       "Active restriction prevents this Bus play.",
     );
+  });
+});
+
+
+const perkCard = (id: string, effectKey: string): PerkCard => ({
+  id,
+  name: effectKey,
+  type: "perk",
+  effectKey,
+  isPersistent: true,
+});
+
+describe("Bonus scoring", () => {
+  test("Express Rider grants +1 when playing an Express Bus card", () => {
+    const state = {
+      ...baseState([busCard("exp", "Manhattan", ["express"])]),
+      currentBorough: "Queens" as const,
+      players: baseState([busCard("exp", "Manhattan", ["express"])]).players.map((player, index) =>
+        index === 0 ? { ...player, activePerk: perkCard("perk-1", "express_rider") } : player,
+      ),
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "exp" });
+
+    expect(next.players[0].scoreByBorough.Manhattan).toBe(2);
+    expect(next.players[0].totalScore).toBe(2);
+    expect(next.eventLog.at(-1)).toContain("(+2 points)");
+  });
+
+  test("Queens Bus Redesign grants +1 when scoring in Queens", () => {
+    const state = {
+      ...baseState([busCard("q-redesign", "Queens")]),
+      players: baseState([busCard("q-redesign", "Queens")]).players.map((player, index) =>
+        index === 0 ? { ...player, activePerk: perkCard("perk-2", "queens_bus_redesign") } : player,
+      ),
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "q-redesign" });
+
+    expect(next.players[0].scoreByBorough.Queens).toBe(2);
+    expect(next.players[0].totalScore).toBe(2);
+  });
+
+  test("bonus scoring still respects borough cap", () => {
+    const state = {
+      ...baseState([busCard("q-cap-bonus", "Queens")]),
+      players: baseState([busCard("q-cap-bonus", "Queens")]).players.map((player, index) =>
+        index === 0
+          ? {
+              ...player,
+              activePerk: perkCard("perk-3", "queens_bus_redesign"),
+              scoreByBorough: { ...player.scoreByBorough, Queens: 2 },
+              totalScore: 2,
+            }
+          : player,
+      ),
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "q-cap-bonus" });
+
+    expect(next.players[0].scoreByBorough.Queens).toBe(3);
+    expect(next.players[0].totalScore).toBe(3);
+    expect(next.eventLog.at(-1)).toContain("(+1 point)");
   });
 });
