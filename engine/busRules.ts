@@ -7,6 +7,7 @@ import {
   type RestrictionEffect,
   type RestrictionKind,
 } from "./state";
+import { incrementBonusCount, resolveBonusOwnership, withRecalculatedTotals } from "./bonuses";
 
 const MAX_POINTS_PER_BOROUGH = 3;
 
@@ -152,7 +153,6 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       ...player,
       busHand: player.busHand.filter((entry) => entry.id !== card.id),
       scoreByBorough: addScoreForBorough(player.scoreByBorough, card.borough),
-      totalScore: player.totalScore + 1,
       actionsRemaining: Math.max(0, player.actionsRemaining - 1),
     };
   });
@@ -161,12 +161,17 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     (restriction) => restriction.targetPlayerId !== currentPlayer.id,
   );
 
-  return {
+  const nextExpressRider = isExpressCard(card)
+    ? resolveBonusOwnership(incrementBonusCount(state.expressRider, currentPlayer.id), currentPlayer.id)
+    : state.expressRider;
+
+  const nextState: GameState = {
     ...state,
     currentBorough: card.borough,
     actionsRemaining: Math.max(0, state.actionsRemaining - 1),
     busPlaysThisTurn: state.busPlaysThisTurn + 1,
     players: updatedPlayers,
+    expressRider: nextExpressRider,
     activeRestrictions: [...remainingRestrictions, ...additionalRestrictions],
     taxiTrip:
       state.taxiTrip && state.taxiTrip.soloBorough === card.borough ? undefined : state.taxiTrip,
@@ -175,4 +180,6 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       `${currentPlayer.name} played ${card.name} to ${card.borough} (+1 point).`,
     ],
   };
+
+  return withRecalculatedTotals(nextState);
 };

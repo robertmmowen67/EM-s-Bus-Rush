@@ -7,6 +7,7 @@ import {
   drawRushCard,
 } from "./decks";
 import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
+import { incrementBonusCount, resolveBonusOwnership, withRecalculatedTotals } from "./bonuses";
 
 const DEFAULT_ACTIONS_PER_TURN = 2;
 
@@ -290,6 +291,10 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
         : player,
     ),
     rushDeck: discardRushCard(state.rushDeck, rushCard),
+    queensBusRedesign: resolveBonusOwnership(
+      incrementBonusCount(state.queensBusRedesign, currentPlayer.id),
+      currentPlayer.id,
+    ),
   };
 
   if (key === "reroute") {
@@ -316,19 +321,19 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
       ),
     };
 
-    return {
+    return withRecalculatedTotals({
       ...nextState,
       players,
       eventLog: [...nextState.eventLog, `${actor.name} rerouted a Bus card to ${input.reroute.toBorough}.`],
-    };
+    });
   }
 
   if (key === "bus_transfer") {
-    return {
+    return withRecalculatedTotals({
       ...nextState,
       busPlaysAllowedThisTurn: Math.max(nextState.busPlaysAllowedThisTurn, 2),
       eventLog: [...nextState.eventLog, `${currentPlayer.name} played Bus Transfer.`],
-    };
+    });
   }
 
   if (!input.destinationBorough) {
@@ -358,7 +363,7 @@ export const playRushCard = (state: GameState, input: PlayRushCardInput): GameSt
     ],
   };
 
-  return movementState;
+  return withRecalculatedTotals(movementState);
 };
 
 export const endTurn = (state: GameState): GameState => {

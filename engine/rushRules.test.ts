@@ -69,6 +69,8 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   activeEvents: [],
   activeRestrictions: [],
   taxiTrip: undefined,
+  expressRider: { ownerPlayerId: undefined, locked: false, countsByPlayerId: { p1: 0, p2: 0 } },
+  queensBusRedesign: { ownerPlayerId: undefined, locked: false, countsByPlayerId: { p1: 0, p2: 0 } },
   eventLog: [],
   ...options,
 });
@@ -300,5 +302,99 @@ describe("Event deck system", () => {
     expect(next.players[0].actionsRemaining).toBe(3);
     expect(next.activeEvents).toHaveLength(0);
     expect(next.eventDeck.discardPile.map((card) => card.id)).toContain("e3");
+  });
+});
+
+
+describe("Queens Bus Redesign bonus race", () => {
+  test("awards to first player reaching 4 Rush plays", () => {
+    const state = createState([rushCard("r-award", "reroute")], [busCard("owned", "Queens")], {
+      queensBusRedesign: { ownerPlayerId: undefined, locked: false, countsByPlayerId: { p1: 3, p2: 0 } },
+    });
+
+    const next = playRushCard(state, {
+      playerId: "p1",
+      cardId: "r-award",
+      reroute: { busCardId: "owned", toBorough: "Bronx" },
+    });
+
+    expect(next.queensBusRedesign.ownerPlayerId).toBe("p1");
+    expect(next.queensBusRedesign.countsByPlayerId.p1).toBe(4);
+    expect(next.players[0].totalScore).toBe(2);
+  });
+
+  test("can be stolen by player exceeding owner's Rush count", () => {
+    const state = createState([rushCard("p1", "take_the_subway")], undefined, {
+      currentPlayerIndex: 1,
+      currentBorough: "Queens",
+      players: [
+        {
+          id: "p1",
+          name: "P1",
+          busHand: [busCard("p1-b1", "Queens")],
+          rushHand: [],
+          scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
+          totalScore: 2,
+          actionsRemaining: 2,
+        },
+        {
+          id: "p2",
+          name: "P2",
+          busHand: [busCard("p2-b1", "Brooklyn")],
+          rushHand: [rushCard("r-steal", "take_the_subway")],
+          scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
+          totalScore: 0,
+          actionsRemaining: 2,
+        },
+      ],
+      queensBusRedesign: { ownerPlayerId: "p1", locked: false, countsByPlayerId: { p1: 4, p2: 4 } },
+    });
+
+    const next = playRushCard(state, {
+      playerId: "p2",
+      cardId: "r-steal",
+      destinationBorough: "Brooklyn",
+    });
+
+    expect(next.queensBusRedesign.ownerPlayerId).toBe("p2");
+    expect(next.queensBusRedesign.countsByPlayerId.p2).toBe(5);
+    expect(next.players[1].totalScore).toBe(2);
+    expect(next.players[0].totalScore).toBe(0);
+  });
+
+  test("locks permanently when a player reaches 6 Rush plays", () => {
+    const state = createState([rushCard("r-lock", "take_the_subway")], undefined, {
+      queensBusRedesign: { ownerPlayerId: "p1", locked: false, countsByPlayerId: { p1: 5, p2: 6 } },
+    });
+
+    const locked = playRushCard(state, {
+      playerId: "p1",
+      cardId: "r-lock",
+      destinationBorough: "Brooklyn",
+    });
+
+    expect(locked.queensBusRedesign.ownerPlayerId).toBe("p1");
+    expect(locked.queensBusRedesign.locked).toBe(true);
+
+    const attemptedSteal = {
+      ...locked,
+      currentPlayerIndex: 1,
+      players: locked.players.map((player, index) =>
+        index === 1
+          ? { ...player, rushHand: [rushCard("r-cannot-steal", "take_the_subway")], actionsRemaining: 2 }
+          : player,
+      ),
+      actionsRemaining: 2,
+      currentBorough: "Queens" as const,
+    };
+
+    const afterAttempt = playRushCard(attemptedSteal, {
+      playerId: "p2",
+      cardId: "r-cannot-steal",
+      destinationBorough: "Brooklyn",
+    });
+
+    expect(afterAttempt.queensBusRedesign.ownerPlayerId).toBe("p1");
+    expect(afterAttempt.queensBusRedesign.locked).toBe(true);
   });
 });

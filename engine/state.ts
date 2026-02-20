@@ -83,6 +83,12 @@ export interface PlayerState {
   actionsRemaining: number;
 }
 
+export interface BonusRaceState {
+  ownerPlayerId?: string;
+  locked: boolean;
+  countsByPlayerId: Record<string, number>;
+}
+
 export interface GameState {
   seed: number;
   players: PlayerState[];
@@ -100,6 +106,8 @@ export interface GameState {
   activeEvents: ActiveEvent[];
   activeRestrictions: PlayerRestriction[];
   taxiTrip?: TaxiTripState;
+  expressRider: BonusRaceState;
+  queensBusRedesign: BonusRaceState;
   eventLog: string[];
 }
 
@@ -116,4 +124,10 @@ export const createEmptyScore = (): Record<Borough, number> => ({
   Queens: 0,
   Bronx: 0,
   StatenIsland: 0,
+});
+
+export const createBonusRaceState = (playerIds: readonly string[]): BonusRaceState => ({
+  ownerPlayerId: undefined,
+  locked: false,
+  countsByPlayerId: Object.fromEntries(playerIds.map((id) => [id, 0])),
 });
