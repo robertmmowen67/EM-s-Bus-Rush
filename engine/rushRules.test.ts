@@ -247,6 +247,24 @@ describe("Taxi return behavior", () => {
 });
 
 describe("Event deck system", () => {
+
+  test("does not reveal an event on non-trigger rounds", () => {
+    const state = createState([], undefined, {
+      round: 1,
+      currentPlayerIndex: 0,
+      eventDeck: {
+        drawPile: [eventCard("e0", "service_surge", 2)],
+        discardPile: [],
+      },
+    });
+
+    const next = endTurn(state);
+
+    expect(next.round).toBe(1);
+    expect(next.activeEvents).toHaveLength(0);
+    expect(next.eventDeck.drawPile.map((card) => card.id)).toEqual(["e0"]);
+  });
+
   test("reveals one event every 2 rounds", () => {
     const state = createState([], undefined, {
       round: 1,
@@ -269,6 +287,10 @@ describe("Event deck system", () => {
     const state = createState([], undefined, {
       round: 2,
       activeEvents: [{ card: eventCard("e2", "rush_hour", 2), roundsRemaining: 2 }],
+      eventDeck: {
+        drawPile: [eventCard("e-one-time", "city_funding_boost")],
+        discardPile: [],
+      },
     });
 
     const afterFirstRound = endTurn({ ...state, currentPlayerIndex: 1 });
@@ -278,6 +300,50 @@ describe("Event deck system", () => {
     const afterSecondRound = endTurn({ ...afterFirstRound, currentPlayerIndex: 1 });
     expect(afterSecondRound.round).toBe(4);
     expect(afterSecondRound.activeEvents).toHaveLength(0);
+  });
+
+  test("applies 2-round modifiers on turn start while active", () => {
+    const state = createState([], undefined, {
+      round: 1,
+      currentPlayerIndex: 1,
+      eventDeck: {
+        drawPile: [eventCard("e4", "service_surge", 2), eventCard("e5", "rush_hour", 2)],
+        discardPile: [],
+      },
+    });
+
+    const afterServiceSurgeReveal = endTurn(state);
+    expect(afterServiceSurgeReveal.round).toBe(2);
+    expect(afterServiceSurgeReveal.busPlaysAllowedThisTurn).toBe(2);
+
+    const afterNextRoundStart = endTurn({ ...afterServiceSurgeReveal, currentPlayerIndex: 1 });
+    expect(afterNextRoundStart.round).toBe(3);
+    expect(afterNextRoundStart.busPlaysAllowedThisTurn).toBe(2);
+
+    const afterRushHourReveal = endTurn({ ...afterNextRoundStart, currentPlayerIndex: 1 });
+    expect(afterRushHourReveal.round).toBe(4);
+    expect(afterRushHourReveal.actionsRemaining).toBe(1);
+    expect(afterRushHourReveal.players[0].actionsRemaining).toBe(1);
+  });
+
+
+  test("expired 2-round events are discarded", () => {
+    const state = createState([], undefined, {
+      round: 2,
+      currentPlayerIndex: 1,
+      activeEvents: [{ card: eventCard("e-expire", "rush_hour", 1), roundsRemaining: 1 }],
+      eventDeck: {
+        drawPile: [],
+        discardPile: [],
+      },
+    });
+
+    const next = endTurn(state);
+
+    expect(next.round).toBe(3);
+    expect(next.activeEvents).toHaveLength(0);
+    expect(next.eventDeck.discardPile.map((card) => card.id)).toContain("e-expire");
+    expect(next.eventLog).toContain("Event expired: rush_hour.");
   });
 
   test("one-time event resolves immediately and is discarded", () => {
