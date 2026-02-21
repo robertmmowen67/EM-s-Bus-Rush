@@ -1,4 +1,4 @@
-import { type BusCard, type DeckState, type EventCard, type GameCard, type RushCard } from "./state";
+import { type BusCard, type DeckState, type EventCard, type GameCard, type PerkCard, type RushCard } from "./state";
 
 const RNG_MODULUS = 2147483647;
 const RNG_MULTIPLIER = 48271;
@@ -12,12 +12,14 @@ export interface DrawResult<TCard extends GameCard> {
 export interface DeckCatalog {
   bus: BusCard[];
   rush: RushCard[];
+  perk: PerkCard[];
   event: EventCard[];
 }
 
 export interface InitializedDecks {
   busDeck: DeckState<BusCard>;
   rushDeck: DeckState<RushCard>;
+  perkDeck: DeckState<PerkCard>;
   eventDeck: DeckState<EventCard>;
 }
 
@@ -153,6 +155,11 @@ export const createEventDeck = (
   seed: number,
 ): DeckState<EventCard> => createDeckState(cards, seed);
 
+export const createPerkDeck = (
+  cards: readonly PerkCard[],
+  seed: number,
+): DeckState<PerkCard> => createDeckState(cards, seed);
+
 export const drawBusCard = (deck: DeckState<BusCard>, seed: number): DrawResult<BusCard> =>
   drawCard(deck, seed);
 
@@ -160,6 +167,9 @@ export const drawRushCard = (deck: DeckState<RushCard>, seed: number): DrawResul
   drawCard(deck, seed);
 
 export const drawEventCard = (deck: DeckState<EventCard>, seed: number): DrawResult<EventCard> =>
+  drawCard(deck, seed);
+
+export const drawPerkCard = (deck: DeckState<PerkCard>, seed: number): DrawResult<PerkCard> =>
   drawCard(deck, seed);
 
 export const discardBusCard = (deck: DeckState<BusCard>, card: BusCard): DeckState<BusCard> =>
@@ -173,8 +183,12 @@ export const discardEventCard = (
   card: EventCard,
 ): DeckState<EventCard> => discardCard(deck, card);
 
+export const discardPerkCard = (deck: DeckState<PerkCard>, card: PerkCard): DeckState<PerkCard> =>
+  discardCard(deck, card);
+
 export const initializeDecks = (catalog: DeckCatalog, seed: number): InitializedDecks => ({
   busDeck: createBusDeck(catalog.bus, seed + 11),
   rushDeck: createRushDeck(catalog.rush, seed + 23),
+  perkDeck: createPerkDeck(catalog.perk, seed + 31),
   eventDeck: createEventDeck(catalog.event, seed + 37),
 });

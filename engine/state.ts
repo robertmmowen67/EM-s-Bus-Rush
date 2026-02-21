@@ -77,6 +77,7 @@ export interface PlayerState {
   name: string;
   busHand: BusCard[];
   rushHand: RushCard[];
+  transitPerks: PerkCard[];
   activePerk?: PerkCard;
   scoreByBorough: Record<Borough, number>;
   totalScore: number;
@@ -106,6 +107,7 @@ export interface GameState {
   rushTradeUsedThisTurn: boolean;
   busDeck: DeckState<BusCard>;
   rushDeck: DeckState<RushCard>;
+  perkDeck: DeckState<PerkCard>;
   eventDeck: DeckState<EventCard>;
   activeEvents: ActiveEvent[];
   activeRestrictions: PlayerRestriction[];

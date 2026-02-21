@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
+import { isPerkSuppressed, purchaseTransitPerk, switchTransitPerk } from "./perkRules";
 import { endTurn, playRushCard, tradeRush } from "./rushRules";
-import { createBonusRaceMap, type BusCard, type EventCard, type GameState, type RushCard } from "./state";
+import { createBonusRaceMap, type BusCard, type EventCard, type GameState, type PerkCard, type RushCard } from "./state";
 
 const busCard = (id: string, borough: BusCard["borough"], value = 1, tags?: string[]): BusCard => ({
   id,
@@ -20,6 +21,15 @@ const rushCard = (id: string, effectKey: string): RushCard => ({
   effectKey,
 });
 
+
+
+const perkCard = (id: string, effectKey: string): PerkCard => ({
+  id,
+  name: effectKey,
+  type: "perk",
+  effectKey,
+  isPersistent: true,
+});
 
 const eventCard = (
   id: string,
@@ -41,6 +51,7 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
       name: "P1",
       busHand: busHand ?? [busCard("p1-b1", "Queens")],
       rushHand,
+      transitPerks: [],
       scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
       totalScore: 0,
       actionsRemaining: 2,
@@ -50,6 +61,7 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
       name: "P2",
       busHand: [busCard("p2-b1", "Brooklyn")],
       rushHand: [],
+      transitPerks: [],
       scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
       totalScore: 0,
       actionsRemaining: 2,
@@ -65,6 +77,7 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   rushTradeUsedThisTurn: false,
   busDeck: { drawPile: [busCard("draw-b1", "Bronx"), busCard("draw-b2", "Brooklyn")], discardPile: [] },
   rushDeck: { drawPile: [rushCard("draw-r1", "take_the_subway")], discardPile: [] },
+  perkDeck: { drawPile: [], discardPile: [] },
   eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
@@ -121,6 +134,7 @@ describe("Rush card effects and action costs", () => {
           name: "P1",
           busHand: [busCard("q1", "Queens"), busCard("q2", "Queens")],
           rushHand: [rushCard("r2", "bus_transfer")],
+          transitPerks: [],
           scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
           totalScore: 0,
           actionsRemaining: 3,
@@ -130,6 +144,7 @@ describe("Rush card effects and action costs", () => {
           name: "P2",
           busHand: [busCard("p2-b1", "Brooklyn")],
           rushHand: [],
+          transitPerks: [],
           scoreByBorough: { Manhattan: 0, Brooklyn: 0, Queens: 0, Bronx: 0, StatenIsland: 0 },
           totalScore: 0,
           actionsRemaining: 2,
@@ -367,5 +382,69 @@ describe("Event deck system", () => {
     expect(next.players[0].actionsRemaining).toBe(3);
     expect(next.activeEvents).toHaveLength(0);
     expect(next.eventDeck.discardPile.map((card) => card.id)).toContain("e3");
+  });
+});
+
+
+describe("Transit perks", () => {
+  test("purchase draws perk and sets active perk", () => {
+    const state = createState([], undefined, {
+      perkDeck: { drawPile: [perkCard("pk1", "rush_trade_discount")], discardPile: [] },
+    });
+
+    const next = purchaseTransitPerk(state, { playerId: "p1" });
+
+    expect(next.players[0].transitPerks.map((card) => card.id)).toEqual(["pk1"]);
+    expect(next.players[0].activePerk?.id).toBe("pk1");
+    expect(next.actionsRemaining).toBe(1);
+  });
+
+  test("switching changes active perk to owned perk", () => {
+    const state = createState([], undefined, {
+      players: [
+        {
+          ...createState([], undefined).players[0],
+          transitPerks: [perkCard("pk1", "rush_trade_discount"), perkCard("pk2", "alt")],
+          activePerk: perkCard("pk1", "rush_trade_discount"),
+        },
+        createState([], undefined).players[1],
+      ],
+    });
+
+    const next = switchTransitPerk(state, { playerId: "p1", perkCardId: "pk2" });
+    expect(next.players[0].activePerk?.id).toBe("pk2");
+  });
+
+  test("Bridge Reconstruction suppresses rush trade discount perk", () => {
+    const discountedState = createState([], [busCard("b1", "Queens", 2)], {
+      players: [
+        {
+          ...createState([], [busCard("b1", "Queens", 2)]).players[0],
+          busHand: [busCard("b1", "Queens", 2)],
+          activePerk: perkCard("pk1", "rush_trade_discount"),
+          transitPerks: [perkCard("pk1", "rush_trade_discount")],
+        },
+        createState([], [busCard("b1", "Queens", 2)]).players[1],
+      ],
+    });
+
+    const discountedTrade = tradeRush(discountedState, {
+      playerId: "p1",
+      busCardIdsForRush: ["b1"],
+    });
+    expect(discountedTrade.players[0].rushHand.map((card) => card.id)).toContain("draw-r1");
+
+    const suppressed = {
+      ...discountedState,
+      activeEvents: [{ card: eventCard("e-bridge", "bridge_reconstruction", 2), roundsRemaining: 2 }],
+    };
+
+    expect(isPerkSuppressed(suppressed)).toBe(true);
+    expect(() =>
+      tradeRush(suppressed, {
+        playerId: "p1",
+        busCardIdsForRush: ["b1"],
+      }),
+    ).toThrow("Bus-to-Rush trade requires Bus cards totaling exactly 3 value.");
   });
 });
