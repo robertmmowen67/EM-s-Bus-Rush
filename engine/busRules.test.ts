@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
-import { type BusCard, type GameState, type PerkCard } from "./state";
+import { type BusCard, type EventCard, type GameState, type PerkCard } from "./state";
 
 const busCard = (
   id: string,
@@ -234,6 +234,14 @@ const perkCard = (id: string, effectKey: string): PerkCard => ({
   isPersistent: true,
 });
 
+const eventCard = (id: string, effectKey: string, durationRounds = 2): EventCard => ({
+  id,
+  name: effectKey,
+  type: "event",
+  effectKey,
+  durationRounds,
+});
+
 describe("Bonus scoring", () => {
   test("Express Rider grants +1 when playing an Express Bus card", () => {
     const state = {
@@ -263,6 +271,23 @@ describe("Bonus scoring", () => {
 
     expect(next.players[0].scoreByBorough.Queens).toBe(2);
     expect(next.players[0].totalScore).toBe(2);
+  });
+
+
+  test("Bridge Reconstruction disables perk bonus scoring", () => {
+    const state = {
+      ...baseState([busCard("exp-bridge", "Manhattan", ["express"])]),
+      currentBorough: "Queens" as const,
+      activeEvents: [{ card: eventCard("e1", "bridge_reconstruction", 2), roundsRemaining: 2 }],
+      players: baseState([busCard("exp-bridge", "Manhattan", ["express"])]).players.map((player, index) =>
+        index === 0 ? { ...player, activePerk: perkCard("perk-b", "express_rider") } : player,
+      ),
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "exp-bridge" });
+
+    expect(next.players[0].scoreByBorough.Manhattan).toBe(1);
+    expect(next.players[0].totalScore).toBe(1);
   });
 
   test("bonus scoring still respects borough cap", () => {

@@ -77,7 +77,14 @@ const addScoreForBorough = (
 
 const normalizeEffectKey = (effectKey: string): string => effectKey.trim().toLowerCase().replace(/\s+/g, "_");
 
-const calculateBonusPoints = (card: BusCard, playerPerkEffectKey?: string): number => {
+const isBridgeReconstructionActive = (state: GameState): boolean =>
+  state.activeEvents.some((event) => normalizeEffectKey(event.card.effectKey) === "bridge_reconstruction");
+
+const calculateBonusPoints = (state: GameState, card: BusCard, playerPerkEffectKey?: string): number => {
+  if (isBridgeReconstructionActive(state)) {
+    return 0;
+  }
+
   const perkKey = playerPerkEffectKey ? normalizeEffectKey(playerPerkEffectKey) : "";
   const expressRiderBonus = perkKey === "express_rider" && isExpressCard(card) ? 1 : 0;
   const queensRedesignBonus = perkKey === "queens_bus_redesign" && card.borough === "Queens" ? 1 : 0;
@@ -132,7 +139,7 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     throw new Error("Borough score cap reached for this player.");
   }
 
-  const bonusPoints = calculateBonusPoints(card, currentPlayer.activePerk?.effectKey);
+  const bonusPoints = calculateBonusPoints(state, card, currentPlayer.activePerk?.effectKey);
   const totalPointsToAward = Math.min(
     MAX_POINTS_PER_BOROUGH - currentPlayer.scoreByBorough[card.borough],
     1 + bonusPoints,
