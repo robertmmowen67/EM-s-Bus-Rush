@@ -1,11 +1,10 @@
 import {
   discardBusCard,
-  discardEventCard,
   discardRushCard,
   drawCards,
-  drawEventCard,
   drawRushCard,
 } from "./decks";
+import { activateEventFromDeck, tickEventsForNewRound } from "./eventRules";
 import { isPerkSuppressed } from "./perkRules";
 import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
 
@@ -18,45 +17,6 @@ interface TurnEventModifiers {
   busPlaysDelta: number;
   logs: string[];
 }
-
-const decrementActiveEvents = (
-  activeEvents: GameState["activeEvents"],
-): { activeEvents: GameState["activeEvents"]; expiredCards: GameState["eventDeck"]["discardPile"] } => {
-  const decremented = activeEvents.map((event) => ({
-    ...event,
-    roundsRemaining: event.roundsRemaining - 1,
-  }));
-
-  const nextActiveEvents = decremented.filter((event) => event.roundsRemaining > 0);
-  const expiredCards = decremented
-    .filter((event) => event.roundsRemaining <= 0)
-    .map((event) => event.card);
-
-  return {
-    activeEvents: nextActiveEvents,
-    expiredCards,
-  };
-};
-
-const applyOneTimeEvent = (state: GameState, eventKey: string): GameState => {
-  if (eventKey === "city_funding_boost") {
-    return {
-      ...state,
-      actionsRemaining: state.actionsRemaining + 1,
-      players: state.players.map((player, index) =>
-        index === state.currentPlayerIndex
-          ? { ...player, actionsRemaining: player.actionsRemaining + 1 }
-          : player,
-      ),
-      eventLog: [...state.eventLog, "Event effect: City Funding Boost grants +1 action this turn."],
-    };
-  }
-
-  return {
-    ...state,
-    eventLog: [...state.eventLog, `Event effect: ${eventKey} resolved.`],
-  };
-};
 
 const normalizeEffectKey = (effectKey: string, name: string): string =>
   (effectKey || name).trim().toLowerCase().replace(/\s+/g, "_");
@@ -116,50 +76,6 @@ const applyTurnEventModifiers = (state: GameState): GameState => {
         : state.eventLog,
   };
 };
-
-const triggerRoundEvent = (state: GameState): GameState => {
-  const draw = drawEventCard(state.eventDeck, state.seed + state.round + state.turn + 53);
-
-  if (!draw.card) {
-    return {
-      ...state,
-      eventDeck: draw.deck,
-      eventLog: [...state.eventLog, "No Event card available to reveal."],
-    };
-  }
-
-  const revealed = draw.card;
-  const eventKey = normalizeEffectKey(revealed.effectKey, revealed.name);
-  const revealedLog = `Event revealed: ${revealed.name}.`;
-
-  if (revealed.durationRounds && revealed.durationRounds > 0) {
-    return {
-      ...state,
-      eventDeck: draw.deck,
-      activeEvents: [
-        ...state.activeEvents,
-        {
-          card: revealed,
-          roundsRemaining: revealed.durationRounds,
-        },
-      ],
-      eventLog: [
-        ...state.eventLog,
-        revealedLog,
-        `Event modifier active for ${revealed.durationRounds} rounds.`,
-      ],
-    };
-  }
-
-  const afterDiscard = {
-    ...state,
-    eventDeck: discardEventCard(draw.deck, revealed),
-    eventLog: [...state.eventLog, revealedLog],
-  };
-
-  return applyOneTimeEvent(afterDiscard, eventKey);
-};
-
 
 interface RushTradeInput {
   playerId: string;
@@ -458,10 +374,6 @@ export const endTurn = (state: GameState): GameState => {
     }
   }
 
-  const decrementedEvents = wrappedRound
-    ? decrementActiveEvents(state.activeEvents)
-    : { activeEvents: state.activeEvents, expiredCards: [] };
-
   const baseNextState: GameState = {
     ...state,
     currentPlayerIndex: nextPlayerIndex,
@@ -472,28 +384,15 @@ export const endTurn = (state: GameState): GameState => {
     busPlaysAllowedThisTurn: 1,
     rushTradeUsedThisTurn: false,
     taxiTrip: nextTaxiTrip,
-    activeEvents: decrementedEvents.activeEvents,
-    eventDeck:
-      decrementedEvents.expiredCards.length > 0
-        ? {
-            ...state.eventDeck,
-            discardPile: [...state.eventDeck.discardPile, ...decrementedEvents.expiredCards],
-          }
-        : state.eventDeck,
-    eventLog:
-      decrementedEvents.expiredCards.length > 0
-        ? [
-            ...state.eventLog,
-            ...decrementedEvents.expiredCards.map((card) => `Event expired: ${card.name}.`),
-          ]
-        : state.eventLog,
     players: state.players.map((player, index) =>
       index === nextPlayerIndex ? { ...player, actionsRemaining: DEFAULT_ACTIONS_PER_TURN } : player,
     ),
   };
 
+  const withTickedEvents = wrappedRound ? tickEventsForNewRound(baseNextState) : baseNextState;
+
   const shouldRevealEvent = wrappedRound && nextRound % EVENT_TRIGGER_ROUND_INTERVAL === 0;
-  const withRoundEvent = shouldRevealEvent ? triggerRoundEvent(baseNextState) : baseNextState;
+  const withRoundEvent = shouldRevealEvent ? activateEventFromDeck(withTickedEvents) : withTickedEvents;
 
   return applyTurnEventModifiers(withRoundEvent);
 };

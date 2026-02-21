@@ -1,13 +1,9 @@
 import { drawPerkCard } from "./decks";
+import { isEventActive } from "./eventRules";
 import { type GameState } from "./state";
 
-const normalizeEffectKey = (effectKey: string, name: string): string =>
-  (effectKey || name).trim().toLowerCase().replace(/\s+/g, "_");
-
 export const isBridgeReconstructionActive = (state: GameState): boolean =>
-  state.activeEvents.some(
-    (event) => normalizeEffectKey(event.card.effectKey, event.card.name) === "bridge_reconstruction",
-  );
+  isEventActive(state, "bridge_reconstruction");
 
 export const isPerkSuppressed = (state: GameState): boolean => isBridgeReconstructionActive(state);
 
