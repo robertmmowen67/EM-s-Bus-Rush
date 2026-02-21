@@ -6,7 +6,7 @@ import {
   drawEventCard,
   drawRushCard,
 } from "./decks";
-import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
+import { OUTER_BOROUGHS, type Borough, type GameState, type PerkCard, type RushCard } from "./state";
 
 const DEFAULT_ACTIONS_PER_TURN = 2;
 
@@ -312,6 +312,60 @@ export const tradeRush = (state: GameState, input: RushTradeInput): GameState =>
     players,
     rushTradeUsedThisTurn: true,
     eventLog: [...state.eventLog, `${currentPlayer.name} traded 1 Rush card for 2 Bus cards.`],
+  };
+};
+
+
+
+interface PurchaseTransitPerkInput {
+  playerId: string;
+  perk: PerkCard;
+  busCardIds: string[];
+}
+
+const TRANSIT_PERK_PURCHASE_VALUE = 3;
+
+export const purchaseTransitPerk = (state: GameState, input: PurchaseTransitPerkInput): GameState => {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (!currentPlayer || currentPlayer.id !== input.playerId) {
+    throw new Error("Only the active player can purchase a Transit Perk.");
+  }
+
+  const selectedBusCards = currentPlayer.busHand.filter((card) => input.busCardIds.includes(card.id));
+  const selectedTotalValue = selectedBusCards.reduce((sum, card) => sum + card.routeValue, 0);
+
+  if (
+    selectedBusCards.length === 0 ||
+    selectedBusCards.length !== input.busCardIds.length ||
+    selectedTotalValue !== TRANSIT_PERK_PURCHASE_VALUE
+  ) {
+    throw new Error("Transit Perk purchase requires Bus cards totaling exactly 3 value.");
+  }
+
+  let busDeck = state.busDeck;
+  for (const card of selectedBusCards) {
+    busDeck = discardBusCard(busDeck, card);
+  }
+
+  const switched = Boolean(currentPlayer.activePerk);
+
+  return {
+    ...state,
+    busDeck,
+    players: state.players.map((player, index) =>
+      index === state.currentPlayerIndex
+        ? {
+            ...player,
+            busHand: player.busHand.filter((card) => !input.busCardIds.includes(card.id)),
+            activePerk: input.perk,
+          }
+        : player,
+    ),
+    eventLog: [
+      ...state.eventLog,
+      `${currentPlayer.name} ${switched ? "switched to" : "purchased"} Transit Perk ${input.perk.name}.`,
+    ],
   };
 };
 

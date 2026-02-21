@@ -1,5 +1,7 @@
 import {
   OUTER_BOROUGHS,
+  type BonusRaceKey,
+  type BonusRaceMap,
   type Borough,
   type BusCard,
   type GameState,
@@ -9,6 +11,9 @@ import {
 } from "./state";
 
 const MAX_POINTS_PER_BOROUGH = 3;
+const BONUS_RACE_AWARD_AT = 4;
+const BONUS_RACE_LOCK_AT = 6;
+const BONUS_RACE_SCORE = 2;
 
 interface PlayBusCardInput {
   playerId: string;
@@ -75,14 +80,30 @@ const addScoreForBorough = (
   [borough]: scoreByBorough[borough] + points,
 });
 
+
 const normalizeEffectKey = (effectKey: string): string => effectKey.trim().toLowerCase().replace(/\s+/g, "_");
 
-const calculateBonusPoints = (card: BusCard, playerPerkEffectKey?: string): number => {
-  const perkKey = playerPerkEffectKey ? normalizeEffectKey(playerPerkEffectKey) : "";
-  const expressRiderBonus = perkKey === "express_rider" && isExpressCard(card) ? 1 : 0;
-  const queensRedesignBonus = perkKey === "queens_bus_redesign" && card.borough === "Queens" ? 1 : 0;
+const isBridgeReconstructionActive = (state: GameState): boolean =>
+  state.activeEvents.some((activeEvent) => normalizeEffectKey(activeEvent.card.effectKey) === "bridge_reconstruction");
 
-  return expressRiderBonus + queensRedesignBonus;
+const calculateTransitPerkObjectiveBonus = (state: GameState, card: BusCard): number => {
+  const currentPlayer = state.players[state.currentPlayerIndex];
+
+  if (!currentPlayer?.activePerk || isBridgeReconstructionActive(state)) {
+    return 0;
+  }
+
+  const perkKey = normalizeEffectKey(currentPlayer.activePerk.effectKey);
+
+  if (perkKey === "express_rider" && isExpressCard(card)) {
+    return 1;
+  }
+
+  if (perkKey === "queens_bus_redesign" && card.borough === "Queens") {
+    return 1;
+  }
+
+  return 0;
 };
 
 const buildRestriction = (
@@ -95,6 +116,66 @@ const buildRestriction = (
   effect,
   expiresAfterBusPlay: true,
 });
+
+const updateBonusRace = (
+  raceKey: BonusRaceKey,
+  shouldCountPlay: boolean,
+  playerId: string,
+  playerNameById: Record<string, string>,
+  bonusRaces: BonusRaceMap,
+  totalScoreByPlayerId: Record<string, number>,
+): { bonusRaces: BonusRaceMap; totalScoreByPlayerId: Record<string, number>; logs: string[] } => {
+  if (!shouldCountPlay) {
+    return { bonusRaces, totalScoreByPlayerId, logs: [] };
+  }
+
+  const race = bonusRaces[raceKey];
+  const logs: string[] = [];
+  const nextCounts = {
+    ...race.perPlayerCounts,
+    [playerId]: (race.perPlayerCounts[playerId] ?? 0) + 1,
+  };
+
+  let nextOwnerId = race.ownerPlayerId;
+  let nextLocked = race.locked;
+  const playerCount = nextCounts[playerId];
+
+  if (!nextLocked) {
+    if (!nextOwnerId && playerCount >= BONUS_RACE_AWARD_AT) {
+      nextOwnerId = playerId;
+      totalScoreByPlayerId[playerId] = (totalScoreByPlayerId[playerId] ?? 0) + BONUS_RACE_SCORE;
+      logs.push(`${playerNameById[playerId]} claimed ${raceKey} bonus (+${BONUS_RACE_SCORE} points).`);
+    } else if (nextOwnerId && nextOwnerId !== playerId) {
+      const ownerCount = nextCounts[nextOwnerId] ?? 0;
+      if (playerCount > ownerCount) {
+        totalScoreByPlayerId[nextOwnerId] = (totalScoreByPlayerId[nextOwnerId] ?? 0) - BONUS_RACE_SCORE;
+        totalScoreByPlayerId[playerId] = (totalScoreByPlayerId[playerId] ?? 0) + BONUS_RACE_SCORE;
+        logs.push(
+          `${playerNameById[playerId]} stole ${raceKey} bonus from ${playerNameById[nextOwnerId]} (+${BONUS_RACE_SCORE} points).`,
+        );
+        nextOwnerId = playerId;
+      }
+    }
+
+    if (nextOwnerId && (nextCounts[nextOwnerId] ?? 0) >= BONUS_RACE_LOCK_AT) {
+      nextLocked = true;
+      logs.push(`${playerNameById[nextOwnerId]} locked ${raceKey} bonus at ${BONUS_RACE_LOCK_AT}.`);
+    }
+  }
+
+  return {
+    bonusRaces: {
+      ...bonusRaces,
+      [raceKey]: {
+        ownerPlayerId: nextOwnerId,
+        locked: nextLocked,
+        perPlayerCounts: nextCounts,
+      },
+    },
+    totalScoreByPlayerId,
+    logs,
+  };
+};
 
 export const playBusCard = (state: GameState, input: PlayBusCardInput): GameState => {
   const currentPlayer = state.players[state.currentPlayerIndex];
@@ -132,10 +213,10 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     throw new Error("Borough score cap reached for this player.");
   }
 
-  const bonusPoints = calculateBonusPoints(card, currentPlayer.activePerk?.effectKey);
+  const perkBonus = calculateTransitPerkObjectiveBonus(state, card);
   const totalPointsToAward = Math.min(
     MAX_POINTS_PER_BOROUGH - currentPlayer.scoreByBorough[card.borough],
-    1 + bonusPoints,
+    1 + perkBonus,
   );
 
   const nextPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
@@ -160,16 +241,44 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     );
   }
 
+  const totalScoreByPlayerId = Object.fromEntries(
+    state.players.map((player) => [player.id, player.totalScore]),
+  );
+  totalScoreByPlayerId[currentPlayer.id] += totalPointsToAward;
+
+  const playerNameById = Object.fromEntries(state.players.map((player) => [player.id, player.name]));
+
+  const expressRaceUpdate = updateBonusRace(
+    "express_rider",
+    isExpressCard(card),
+    currentPlayer.id,
+    playerNameById,
+    state.bonusRaces,
+    totalScoreByPlayerId,
+  );
+
+  const queensRaceUpdate = updateBonusRace(
+    "queens_bus_redesign",
+    card.borough === "Queens",
+    currentPlayer.id,
+    playerNameById,
+    expressRaceUpdate.bonusRaces,
+    expressRaceUpdate.totalScoreByPlayerId,
+  );
+
   const updatedPlayers = state.players.map((player) => {
     if (player.id !== currentPlayer.id) {
-      return player;
+      return {
+        ...player,
+        totalScore: queensRaceUpdate.totalScoreByPlayerId[player.id] ?? player.totalScore,
+      };
     }
 
     return {
       ...player,
       busHand: player.busHand.filter((entry) => entry.id !== card.id),
       scoreByBorough: addScoreForBorough(player.scoreByBorough, card.borough, totalPointsToAward),
-      totalScore: player.totalScore + totalPointsToAward,
+      totalScore: queensRaceUpdate.totalScoreByPlayerId[player.id],
       actionsRemaining: Math.max(0, player.actionsRemaining - 1),
     };
   });
@@ -184,6 +293,7 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
     actionsRemaining: Math.max(0, state.actionsRemaining - 1),
     busPlaysThisTurn: state.busPlaysThisTurn + 1,
     players: updatedPlayers,
+    bonusRaces: queensRaceUpdate.bonusRaces,
     activeRestrictions: [...remainingRestrictions, ...additionalRestrictions],
     taxiTrip:
       state.taxiTrip && state.taxiTrip.soloBorough === card.borough ? undefined : state.taxiTrip,
@@ -192,6 +302,8 @@ export const playBusCard = (state: GameState, input: PlayBusCardInput): GameStat
       `${currentPlayer.name} played ${card.name} to ${card.borough} (+${totalPointsToAward} point${
         totalPointsToAward === 1 ? "" : "s"
       }).`,
+      ...expressRaceUpdate.logs,
+      ...queensRaceUpdate.logs,
     ],
   };
 };
