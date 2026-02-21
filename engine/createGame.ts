@@ -1,5 +1,6 @@
 import { drawCards, initializeDecks, type DeckCatalog } from "./decks";
 import {
+  createBonusRaceMap,
   createEmptyScore,
   type CreateGameInput,
   type GameState,
@@ -53,6 +54,7 @@ export const createGame = (
     eventDeck,
     activeEvents: [],
     activeRestrictions: [],
+    bonusRaces: createBonusRaceMap(players.map((player) => player.id)),
     taxiTrip: undefined,
     eventLog: ["Game created."],
   };

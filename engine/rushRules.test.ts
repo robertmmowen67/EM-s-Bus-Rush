@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
 import { endTurn, playRushCard, tradeRush } from "./rushRules";
-import { type BusCard, type EventCard, type GameState, type RushCard } from "./state";
+import { createBonusRaceMap, type BusCard, type EventCard, type GameState, type RushCard } from "./state";
 
 const busCard = (id: string, borough: BusCard["borough"], value = 1, tags?: string[]): BusCard => ({
   id,
@@ -68,6 +68,7 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
+  bonusRaces: createBonusRaceMap(["p1", "p2"]),
   taxiTrip: undefined,
   eventLog: [],
   ...options,
