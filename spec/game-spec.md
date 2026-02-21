@@ -72,3 +72,13 @@ This repository currently defines the **engine bootstrap scope** for deck/state 
 - Reshuffle-on-depletion should occur exactly when draw pile is empty and discard has cards.
 - Unit tests must cover legal and illegal Bus plays plus scoring outcomes.
 - Unit tests must cover Rush action costs, movement legality, and Taxi return timing.
+
+## Event deck runtime and timed modifiers
+
+- Event deck must expose deterministic create/draw/discard helpers with the same reshuffle-on-depletion behavior as Bus and Rush decks.
+- At the start of each new round (when turn order wraps), timed active events decrement by 1 round.
+- Timed events with `roundsRemaining` reaching 0 expire immediately at round start and move to the Event discard pile.
+- After round-start ticking, reveal exactly one Event card every 2 rounds (`round % 2 === 0`).
+- Event cards with `durationRounds > 0` become active modifiers with matching `roundsRemaining`.
+- Event cards without a positive duration resolve immediately and are discarded after resolution.
+- Turn-start modifiers from active events apply for the incoming player after round advancement/reveal logic.
