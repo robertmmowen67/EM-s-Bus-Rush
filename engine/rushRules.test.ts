@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
-import { endTurn, playRushCard, tradeRush } from "./rushRules";
-import { type BusCard, type EventCard, type GameState, type RushCard } from "./state";
+import { endTurn, playRushCard, purchaseTransitPerk, tradeRush } from "./rushRules";
+import { type BusCard, type EventCard, type GameState, type PerkCard, type RushCard } from "./state";
 
 const busCard = (id: string, borough: BusCard["borough"], value = 1, tags?: string[]): BusCard => ({
   id,
@@ -20,6 +20,14 @@ const rushCard = (id: string, effectKey: string): RushCard => ({
   effectKey,
 });
 
+
+const perkCard = (id: string, effectKey: string): PerkCard => ({
+  id,
+  name: effectKey,
+  type: "perk",
+  effectKey,
+  isPersistent: true,
+});
 
 const eventCard = (
   id: string,
@@ -71,6 +79,54 @@ const createState = (rushHand: RushCard[], busHand?: BusCard[], options?: Partia
   taxiTrip: undefined,
   eventLog: [],
   ...options,
+});
+
+
+describe("Transit Perk purchases", () => {
+  test("only active player can purchase", () => {
+    const state = createState([], [busCard("b1", "Queens", 1), busCard("b2", "Queens", 2)]);
+
+    expect(() =>
+      purchaseTransitPerk({ ...state, currentPlayerIndex: 1 }, {
+        playerId: "p1",
+        perk: perkCard("perk-1", "express_rider"),
+        busCardIds: ["b1", "b2"],
+      }),
+    ).toThrow("Only the active player can purchase a Transit Perk.");
+  });
+
+  test("requires value 3 and switching also costs 3", () => {
+    const state = createState([], [
+      busCard("b1", "Queens", 1),
+      busCard("b2", "Queens", 1),
+      busCard("b3", "Queens", 2),
+      busCard("b4", "Queens", 2),
+    ]);
+
+    expect(() =>
+      purchaseTransitPerk(state, {
+        playerId: "p1",
+        perk: perkCard("perk-1", "express_rider"),
+        busCardIds: ["b1", "b2"],
+      }),
+    ).toThrow("Transit Perk purchase requires Bus cards totaling exactly 3 value.");
+
+    const purchased = purchaseTransitPerk(state, {
+      playerId: "p1",
+      perk: perkCard("perk-1", "express_rider"),
+      busCardIds: ["b2", "b4"],
+    });
+
+    expect(purchased.players[0].activePerk?.effectKey).toBe("express_rider");
+
+    const switched = purchaseTransitPerk(purchased, {
+      playerId: "p1",
+      perk: perkCard("perk-2", "queens_bus_redesign"),
+      busCardIds: ["b1", "b3"],
+    });
+
+    expect(switched.players[0].activePerk?.effectKey).toBe("queens_bus_redesign");
+  });
 });
 
 describe("Rush trading", () => {
