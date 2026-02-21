@@ -83,6 +83,16 @@ export interface PlayerState {
   actionsRemaining: number;
 }
 
+export type BonusRaceKey = "express_rider" | "queens_bus_redesign";
+
+export interface BonusRaceState {
+  ownerPlayerId?: string;
+  locked: boolean;
+  perPlayerCounts: Record<string, number>;
+}
+
+export type BonusRaceMap = Record<BonusRaceKey, BonusRaceState>;
+
 export interface GameState {
   seed: number;
   players: PlayerState[];
@@ -99,6 +109,7 @@ export interface GameState {
   eventDeck: DeckState<EventCard>;
   activeEvents: ActiveEvent[];
   activeRestrictions: PlayerRestriction[];
+  bonusRaces: BonusRaceMap;
   taxiTrip?: TaxiTripState;
   eventLog: string[];
 }
@@ -117,3 +128,29 @@ export const createEmptyScore = (): Record<Borough, number> => ({
   Bronx: 0,
   StatenIsland: 0,
 });
+
+export const createBonusRaceMap = (playerIds: string[]): BonusRaceMap => {
+  const toCountMap = (): Record<string, number> =>
+    Object.fromEntries(playerIds.map((id) => [id, 0]));
+
+  return {
+    express_rider: {
+      ownerPlayerId: undefined,
+      locked: false,
+      perPlayerCounts: toCountMap(),
+    },
+    queens_bus_redesign: {
+      ownerPlayerId: undefined,
+      locked: false,
+      perPlayerCounts: toCountMap(),
+    },
+  };
+};
+
+export const WINNING_SCORE = 14;
+
+export const hasBoroughCoverage = (player: PlayerState): boolean =>
+  BOROUGHS.every((borough) => player.scoreByBorough[borough] >= 1);
+
+export const isWinningPlayer = (player: PlayerState): boolean =>
+  player.totalScore >= WINNING_SCORE && hasBoroughCoverage(player);
