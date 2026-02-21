@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { playBusCard } from "./busRules";
-import { type BusCard, type GameState, type PerkCard } from "./state";
+import { createBonusRaceMap, type BusCard, type EventCard, type GameState, type PerkCard } from "./state";
 
 const busCard = (
   id: string,
@@ -15,6 +15,23 @@ const busCard = (
   borough,
   routeValue,
   tags,
+});
+
+
+const perkCard = (id: string, effectKey: string): PerkCard => ({
+  id,
+  name: effectKey,
+  type: "perk",
+  effectKey,
+  isPersistent: true,
+});
+
+const eventCard = (id: string, effectKey: string, durationRounds = 2): EventCard => ({
+  id,
+  name: effectKey,
+  type: "event",
+  effectKey,
+  durationRounds,
 });
 
 const baseState = (hand: BusCard[]): GameState => ({
@@ -32,6 +49,7 @@ const baseState = (hand: BusCard[]): GameState => ({
   eventDeck: { drawPile: [], discardPile: [] },
   activeEvents: [],
   activeRestrictions: [],
+  bonusRaces: createBonusRaceMap(["p1", "p2", "p3"]),
   eventLog: [],
   players: [
     {
@@ -94,7 +112,6 @@ describe("playBusCard borough validation and scoring", () => {
     expect(next.players[0].scoreByBorough.Manhattan).toBe(1);
   });
 
-
   test("consumes exactly 1 action on a legal Bus play", () => {
     const state = baseState([busCard("q-action", "Queens")]);
     const next = playBusCard(state, { playerId: "p1", cardId: "q-action" });
@@ -117,7 +134,6 @@ describe("playBusCard borough validation and scoring", () => {
       "No actions remaining for this turn.",
     );
   });
-
 
   test("rejects scoring when player already has max points in borough", () => {
     const state = {
@@ -226,64 +242,162 @@ describe("Limited/Select restrictions", () => {
 });
 
 
-const perkCard = (id: string, effectKey: string): PerkCard => ({
-  id,
-  name: effectKey,
-  type: "perk",
-  effectKey,
-  isPersistent: true,
-});
-
-describe("Bonus scoring", () => {
-  test("Express Rider grants +1 when playing an Express Bus card", () => {
+describe("Transit perk objectives", () => {
+  test("Express Rider objective grants +1 when active", () => {
     const state = {
       ...baseState([busCard("exp", "Manhattan", ["express"])]),
       currentBorough: "Queens" as const,
       players: baseState([busCard("exp", "Manhattan", ["express"])]).players.map((player, index) =>
-        index === 0 ? { ...player, activePerk: perkCard("perk-1", "express_rider") } : player,
+        index === 0 ? { ...player, activePerk: perkCard("perk-e", "express_rider") } : player,
       ),
     };
 
     const next = playBusCard(state, { playerId: "p1", cardId: "exp" });
-
-    expect(next.players[0].scoreByBorough.Manhattan).toBe(2);
     expect(next.players[0].totalScore).toBe(2);
-    expect(next.eventLog.at(-1)).toContain("(+2 points)");
   });
 
-  test("Queens Bus Redesign grants +1 when scoring in Queens", () => {
+  test("Queens Bus Redesign objective grants +1 when active", () => {
     const state = {
-      ...baseState([busCard("q-redesign", "Queens")]),
-      players: baseState([busCard("q-redesign", "Queens")]).players.map((player, index) =>
-        index === 0 ? { ...player, activePerk: perkCard("perk-2", "queens_bus_redesign") } : player,
+      ...baseState([busCard("q", "Queens")]),
+      players: baseState([busCard("q", "Queens")]).players.map((player, index) =>
+        index === 0 ? { ...player, activePerk: perkCard("perk-q", "queens_bus_redesign") } : player,
       ),
     };
 
-    const next = playBusCard(state, { playerId: "p1", cardId: "q-redesign" });
-
-    expect(next.players[0].scoreByBorough.Queens).toBe(2);
+    const next = playBusCard(state, { playerId: "p1", cardId: "q" });
     expect(next.players[0].totalScore).toBe(2);
   });
 
-  test("bonus scoring still respects borough cap", () => {
+  test("Bridge Reconstruction disables perk effects while active", () => {
     const state = {
-      ...baseState([busCard("q-cap-bonus", "Queens")]),
-      players: baseState([busCard("q-cap-bonus", "Queens")]).players.map((player, index) =>
+      ...baseState([busCard("exp-bridge", "Manhattan", ["express"])]),
+      currentBorough: "Queens" as const,
+      activeEvents: [{ card: eventCard("evt-1", "bridge_reconstruction", 2), roundsRemaining: 2 }],
+      players: baseState([busCard("exp-bridge", "Manhattan", ["express"])]).players.map((player, index) =>
+        index === 0 ? { ...player, activePerk: perkCard("perk-e", "express_rider") } : player,
+      ),
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "exp-bridge" });
+    expect(next.players[0].totalScore).toBe(1);
+    expect(next.eventLog.at(-1)).toContain("(+1 point)");
+  });
+});
+
+
+describe("Bonus races", () => {
+  test("awards Express Rider at 4 and grants +2 total score", () => {
+    const state = {
+      ...baseState([busCard("exp-4", "Manhattan", ["express"])]),
+      currentBorough: "Queens" as const,
+      players: baseState([busCard("exp-4", "Manhattan", ["express"])]).players.map((player, index) =>
         index === 0
           ? {
               ...player,
-              activePerk: perkCard("perk-3", "queens_bus_redesign"),
-              scoreByBorough: { ...player.scoreByBorough, Queens: 2 },
-              totalScore: 2,
+              totalScore: 3,
+            }
+          : player,
+      ),
+      bonusRaces: {
+        ...createBonusRaceMap(["p1", "p2", "p3"]),
+        express_rider: {
+          ownerPlayerId: undefined,
+          locked: false,
+          perPlayerCounts: { p1: 3, p2: 1, p3: 0 },
+        },
+      },
+    };
+
+    const next = playBusCard(state, { playerId: "p1", cardId: "exp-4" });
+
+    expect(next.bonusRaces.express_rider.ownerPlayerId).toBe("p1");
+    expect(next.players[0].totalScore).toBe(6); // +1 bus +2 bonus
+  });
+
+  test("steals Queens Bus Redesign when challenger exceeds owner count", () => {
+    const state = {
+      ...baseState([busCard("q-steal", "Queens")]),
+      currentPlayerIndex: 1,
+      players: baseState([busCard("unused", "Queens")]).players.map((player, index) => {
+        if (index === 0) {
+          return { ...player, totalScore: 5 };
+        }
+
+        if (index === 1) {
+          return { ...player, busHand: [busCard("q-steal", "Queens")], totalScore: 2 };
+        }
+
+        return player;
+      }),
+      bonusRaces: {
+        ...createBonusRaceMap(["p1", "p2", "p3"]),
+        queens_bus_redesign: {
+          ownerPlayerId: "p1",
+          locked: false,
+          perPlayerCounts: { p1: 4, p2: 4, p3: 0 },
+        },
+      },
+    };
+
+    const next = playBusCard(state, { playerId: "p2", cardId: "q-steal" });
+
+    expect(next.bonusRaces.queens_bus_redesign.ownerPlayerId).toBe("p2");
+    expect(next.players[0].totalScore).toBe(3); // loses 2
+    expect(next.players[1].totalScore).toBe(5); // +1 bus +2 bonus
+  });
+
+  test("locks Express Rider at 6 and prevents future steals", () => {
+    const p2State = baseState([busCard("exp-lock", "Manhattan", ["express"])]);
+    const state = {
+      ...p2State,
+      currentBorough: "Queens" as const,
+      currentPlayerIndex: 1,
+      players: p2State.players.map((player, index) => {
+        if (index === 1) {
+          return {
+            ...player,
+            busHand: [busCard("exp-lock", "Manhattan", ["express"])],
+            totalScore: 2,
+          };
+        }
+
+        return {
+          ...player,
+          totalScore: index === 0 ? 4 : player.totalScore,
+        };
+      }),
+      bonusRaces: {
+        ...createBonusRaceMap(["p1", "p2", "p3"]),
+        express_rider: {
+          ownerPlayerId: "p2",
+          locked: false,
+          perPlayerCounts: { p1: 5, p2: 5, p3: 0 },
+        },
+      },
+    };
+
+    const locked = playBusCard(state, { playerId: "p2", cardId: "exp-lock" });
+    expect(locked.bonusRaces.express_rider.locked).toBe(true);
+    expect(locked.bonusRaces.express_rider.ownerPlayerId).toBe("p2");
+
+    const challengerTurn = {
+      ...locked,
+      currentPlayerIndex: 0,
+      currentBorough: "Queens" as const,
+      busPlaysThisTurn: 0,
+      actionsRemaining: 2,
+      players: locked.players.map((player, index) =>
+        index === 0
+          ? {
+              ...player,
+              busHand: [busCard("exp-challenge", "Manhattan", ["express"])],
+              actionsRemaining: 2,
             }
           : player,
       ),
     };
 
-    const next = playBusCard(state, { playerId: "p1", cardId: "q-cap-bonus" });
-
-    expect(next.players[0].scoreByBorough.Queens).toBe(3);
-    expect(next.players[0].totalScore).toBe(3);
-    expect(next.eventLog.at(-1)).toContain("(+1 point)");
+    const afterChallenge = playBusCard(challengerTurn, { playerId: "p1", cardId: "exp-challenge" });
+    expect(afterChallenge.bonusRaces.express_rider.ownerPlayerId).toBe("p2");
   });
 });
