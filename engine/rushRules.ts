@@ -6,6 +6,7 @@ import {
   drawEventCard,
   drawRushCard,
 } from "./decks";
+import { isPerkSuppressed } from "./perkRules";
 import { OUTER_BOROUGHS, type Borough, type GameState, type RushCard } from "./state";
 
 const DEFAULT_ACTIONS_PER_TURN = 2;
@@ -192,6 +193,16 @@ const assertRushNotBlocked = (state: GameState, playerId: string): void => {
 
 const isOuter = (borough: Borough): boolean => OUTER_BOROUGHS.includes(borough);
 
+const getBusTradeTargetValue = (state: GameState, playerIndex: number): number => {
+  const player = state.players[playerIndex];
+  if (!player?.activePerk || isPerkSuppressed(state)) {
+    return 3;
+  }
+
+  const key = normalizeEffectKey(player.activePerk.effectKey, player.activePerk.name);
+  return key === "rush_trade_discount" ? 2 : 3;
+};
+
 const canMoveWithKey = (key: string, from: Borough, to: Borough): boolean => {
   if (from === to) {
     return false;
@@ -251,9 +262,10 @@ export const tradeRush = (state: GameState, input: RushTradeInput): GameState =>
   if (input.busCardIdsForRush) {
     const selected = currentPlayer.busHand.filter((card) => input.busCardIdsForRush?.includes(card.id));
     const total = selected.reduce((sum, card) => sum + card.routeValue, 0);
+    const tradeTargetValue = getBusTradeTargetValue(state, state.currentPlayerIndex);
 
-    if (selected.length === 0 || total !== 3 || selected.length !== input.busCardIdsForRush.length) {
-      throw new Error("Bus-to-Rush trade requires Bus cards totaling exactly 3 value.");
+    if (selected.length === 0 || total !== tradeTargetValue || selected.length !== input.busCardIdsForRush.length) {
+      throw new Error(`Bus-to-Rush trade requires Bus cards totaling exactly ${tradeTargetValue} value.`);
     }
 
     let busDeck = state.busDeck;
@@ -281,7 +293,7 @@ export const tradeRush = (state: GameState, input: RushTradeInput): GameState =>
       rushDeck: rushDraw.deck,
       players,
       rushTradeUsedThisTurn: true,
-      eventLog: [...state.eventLog, `${currentPlayer.name} traded Bus value 3 for 1 Rush card.`],
+      eventLog: [...state.eventLog, `${currentPlayer.name} traded Bus value ${tradeTargetValue} for 1 Rush card.`],
     };
   }
 
